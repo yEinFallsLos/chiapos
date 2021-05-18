@@ -22,6 +22,9 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 // enables disk I/O logging to disk.log
 // use tools/disk.gnuplot to generate a plot
@@ -47,55 +50,6 @@ struct Disk {
     virtual ~Disk() = default;
 };
 
-#if ENABLE_LOGGING
-// logging is currently unix / bsd only: use <fstream> or update
-// calls to ::open and ::write to port to windows
-#include <fcntl.h>
-#include <unistd.h>
-#include <mutex>
-#include <unordered_map>
-#include <cinttypes>
-
-enum class op_t : int { read, write};
-
-void disk_log(fs::path const& filename, op_t const op, uint64_t offset, uint64_t length)
-{
-    static std::mutex m;
-    static std::unordered_map<std::string, int> file_index;
-    static auto const start_time = std::chrono::steady_clock::now();
-    static int next_file = 0;
-
-    auto const timestamp = std::chrono::steady_clock::now() - start_time;
-
-    int fd = ::open("disk.log", O_WRONLY | O_CREAT | O_APPEND, 0755);
-
-    std::unique_lock<std::mutex> l(m);
-
-    char buffer[512];
-
-    int const index = [&] {
-        auto it = file_index.find(filename.string());
-        if (it != file_index.end()) return it->second;
-        file_index[filename.string()] = next_file;
-
-        int const len = std::snprintf(buffer, sizeof(buffer)
-            , "# %d %s\n", next_file, filename.string().c_str());
-        ::write(fd, buffer, len);
-        return next_file++;
-    }();
-
-    // timestamp (ms), start-offset, end-offset, operation (0 = read, 1 = write), file_index
-    int const len = std::snprintf(buffer, sizeof(buffer)
-        , "%" PRId64 "\t%" PRIu64 "\t%" PRIu64 "\t%d\t%d\n"
-        , std::chrono::duration_cast<std::chrono::milliseconds>(timestamp).count()
-        , offset
-        , offset + length
-        , int(op)
-        , index);
-    ::write(fd, buffer, len);
-    ::close(fd);
-}
-#endif
 
 struct FileDisk {
     explicit FileDisk(const fs::path &filename)
@@ -107,18 +61,18 @@ struct FileDisk {
     void Open(uint8_t flags = 0)
     {
         // if the file is already open, don't do anything
-        if (f_) return;
+        if (fd != 0) return;
 
         // Opens the file for reading and writing
         do {
-#ifdef _WIN32
-            f_ = ::_wfopen(filename_.c_str(), (flags & writeFlag) ? L"w+b" : L"r+b");
-#else
-            f_ = ::fopen(filename_.c_str(), (flags & writeFlag) ? "w+b" : "r+b");
-#endif
-            if (f_ == nullptr) {
+
+            /// apparently, sometimes the file is written to when writeflag is set. just open for rdwr always
+            int mode =  (flags & writeFlag) ? (O_RDWR | O_CREAT) : O_RDWR;
+            fd = open(filename_.c_str(), mode, S_IRUSR | S_IWUSR);
+            if (fd < 0) {
                 std::string error_message =
-                    "Could not open " + filename_.string() + ": " + ::strerror(errno) + ".";
+                    "Could not open " + filename_.string() + ": " + ::strerror(errno);
+                std::cout << error_message << ". (mode=" << mode << ")" << std::endl;
                 if (flags & retryOpenFlag) {
                     std::cout << error_message << " Retrying in five minutes." << std::endl;
                     std::this_thread::sleep_for(5min);
@@ -126,14 +80,12 @@ struct FileDisk {
                     throw InvalidValueException(error_message);
                 }
             }
-        } while (f_ == nullptr);
+        } while (!fd);
     }
 
     FileDisk(FileDisk &&fd)
     {
         filename_ = std::move(fd.filename_);
-        f_ = fd.f_;
-        fd.f_ = nullptr;
     }
 
     FileDisk(const FileDisk &) = delete;
@@ -141,9 +93,8 @@ struct FileDisk {
 
     void Close()
     {
-        if (f_ == nullptr) return;
-        ::fclose(f_);
-        f_ = nullptr;
+        close(fd);
+        fd = 0;
         readPos = 0;
         writePos = 0;
     }
@@ -153,34 +104,20 @@ struct FileDisk {
     void Read(uint64_t begin, uint8_t *memcache, uint64_t length)
     {
         Open(retryOpenFlag);
-#if ENABLE_LOGGING
-        disk_log(filename_, op_t::read, begin, length);
-#endif
         // Seek, read, and replace into memcache
         uint64_t amtread;
         do {
-            if ((!bReading) || (begin != readPos)) {
-#ifdef _WIN32
-                _fseeki64(f_, begin, SEEK_SET);
-#else
-                // fseek() takes a long as offset, make sure it's wide enough
-                static_assert(sizeof(long) >= sizeof(begin));
-                ::fseek(f_, begin, SEEK_SET);
-#endif
-                bReading = true;
-            }
-            amtread = ::fread(reinterpret_cast<char *>(memcache), sizeof(uint8_t), length, f_);
-            readPos = begin + amtread;
-            if (amtread != length) {
-                std::cout << "Only read " << amtread << " of " << length << " bytes at offset "
-                          << begin << " from " << filename_ << " with length " << writeMax
-                          << ". Error " << ferror(f_) << ". Retrying in five minutes." << std::endl;
+            amtread = pread64(fd, memcache, length, begin);
+            if (amtread < length) {
+               std::cout << "Only read " << amtread << " of " << length << " bytes at offset "
+                          << begin << " to " << filename_ << " with length " << writeMax
+                          << ".  Retrying in five minutes." << std::endl;
                 // Close, Reopen, and re-seek the file to recover in case the filesystem
                 // has been remounted.
                 Close();
                 bReading = false;
                 std::this_thread::sleep_for(5min);
-                Open(retryOpenFlag);
+                Open(writeFlag | retryOpenFlag);
             }
         } while (amtread != length);
     }
@@ -188,31 +125,18 @@ struct FileDisk {
     void Write(uint64_t begin, const uint8_t *memcache, uint64_t length)
     {
         Open(writeFlag | retryOpenFlag);
-#if ENABLE_LOGGING
-        disk_log(filename_, op_t::write, begin, length);
-#endif
         // Seek and write from memcache
-        uint64_t amtwritten;
+        ssize_t amtwritten;
         do {
-            if ((bReading) || (begin != writePos)) {
-#ifdef _WIN32
-                _fseeki64(f_, begin, SEEK_SET);
-#else
-                // fseek() takes a long as offset, make sure it's wide enough
-                static_assert(sizeof(long) >= sizeof(begin));
-                ::fseek(f_, begin, SEEK_SET);
-#endif
-                bReading = false;
+            amtwritten = pwrite64(fd, memcache, length, begin);
+            if (amtwritten < 0) {
+                std::cout << "Error writing: "  << strerror(errno) << std::endl;
             }
-            amtwritten =
-                ::fwrite(reinterpret_cast<const char *>(memcache), sizeof(uint8_t), length, f_);
-            writePos = begin + amtwritten;
-            if (writePos > writeMax)
-                writeMax = writePos;
             if (amtwritten != length) {
+                std::cout << "Error writing fd=" << fd << ": "  << strerror(errno) << std::endl;
                 std::cout << "Only wrote " << amtwritten << " of " << length << " bytes at offset "
                           << begin << " to " << filename_ << " with length " << writeMax
-                          << ". Error " << ferror(f_) << ". Retrying in five minutes." << std::endl;
+                          << ". Error. Retrying in five minutes." << std::endl;
                 // Close, Reopen, and re-seek the file to recover in case the filesystem
                 // has been remounted.
                 Close();
@@ -241,7 +165,7 @@ private:
     bool bReading = true;
 
     fs::path filename_;
-    FILE *f_ = nullptr;
+    int fd = 0;
 
     static const uint8_t writeFlag = 0b01;
     static const uint8_t retryOpenFlag = 0b10;
