@@ -44,7 +44,7 @@ vector<unsigned char> intToBytes(uint32_t paramInt, uint32_t numBytes)
 }
 
 static uint128_t to_uint128(uint64_t hi, uint64_t lo) { return (uint128_t)hi << 64 | lo; }
-
+/*
 TEST_CASE("SliceInt64FromBytes 1 bit")
 {
     const uint8_t bytes[9 + 7] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9};
@@ -478,7 +478,7 @@ TEST_CASE("F functions")
         VerifyFC(7, 16, 0x64ac5db9, 0x7923986, 0x590fd, 0x1c74a2, 0x0);
     }
 }
-
+*/
 void HexToBytes(const string& hex, uint8_t* result)
 {
     for (unsigned int i = 0; i < hex.length(); i += 2) {
@@ -552,7 +552,7 @@ void PlotAndTestProofOfSpace(
 }
 
 TEST_CASE("Plotting")
-{
+{/*
     SECTION("Disk plot k18")
     {
         PlotAndTestProofOfSpace("cpp-test-plot.dat", 100, 18, plot_id_1, 11, 95, 4000, 2);
@@ -568,15 +568,15 @@ TEST_CASE("Plotting")
     SECTION("Disk plot k20")
     {
         PlotAndTestProofOfSpace("cpp-test-plot.dat", 500, 20, plot_id_3, 100, 469, 16000, 2);
-    }
+    }*/
     SECTION("Disk plot k21")
     {
-        PlotAndTestProofOfSpace("cpp-test-plot.dat", 5000, 21, plot_id_3, 100, 4945, 8192, 4);
+        PlotAndTestProofOfSpace("/cpp-test-plot.dat", 5000, 23, plot_id_3, 100, 4945, 8192, 4);
     }
     // SECTION("Disk plot k24") { PlotAndTestProofOfSpace("cpp-test-plot.dat", 100, 24, plot_id_3,
     // 100, 107); }
 }
-
+/*
 TEST_CASE("Invalid plot")
 {
     SECTION("File gets deleted")
@@ -1023,5 +1023,5 @@ TEST_CASE("FilteredDisk")
         FilteredDisk fd(std::move(bd), std::move(filter), 4);
     }
 */
-    remove("test_file.bin");
-}
+    //remove("test_file.bin");
+//}

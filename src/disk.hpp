@@ -156,7 +156,7 @@ struct FileDisk {
         Close();
         fs::resize_file(filename_, new_size);
     }
-
+    int fd = 0;
 private:
 
     uint64_t readPos = 0;
@@ -165,7 +165,7 @@ private:
     bool bReading = true;
 
     fs::path filename_;
-    int fd = 0;
+
 
     static const uint8_t writeFlag = 0b01;
     static const uint8_t retryOpenFlag = 0b10;
