@@ -35,12 +35,15 @@ namespace QuickSort {
         uint64_t end,
         uint8_t *pivot_space)
     {
+        uint32_t start_byte = bits_begin / 8;
+        uint8_t mask = ((1 << (8 - (bits_begin % 8))) - 1);
+
         if (end - begin <= 5) {
             for (uint64_t i = begin + 1; i < end; i++) {
                 uint64_t j = i;
                 memcpy(pivot_space, memory + i * L, L);
                 while (j > begin &&
-                       Util::MemCmpBits(memory + (j - 1) * L, pivot_space, L, bits_begin) > 0) {
+                       Util::MemCmpBits(memory + (j - 1) * L, pivot_space, L, start_byte, mask) > 0) {
                     memcpy(memory + j * L, memory + (j - 1) * L, L);
                     j--;
                 }
@@ -57,7 +60,7 @@ namespace QuickSort {
 
         while (lo < hi) {
             if (left_side) {
-                if (Util::MemCmpBits(memory + lo * L, pivot_space, L, bits_begin) < 0) {
+                if (Util::MemCmpBits(memory + lo * L, pivot_space, L, start_byte, mask) < 0) {
                     ++lo;
                 } else {
                     memcpy(memory + hi * L, memory + lo * L, L);
@@ -65,7 +68,7 @@ namespace QuickSort {
                     left_side = false;
                 }
             } else {
-                if (Util::MemCmpBits(memory + hi * L, pivot_space, L, bits_begin) > 0) {
+                if (Util::MemCmpBits(memory + hi * L, pivot_space, L, start_byte, mask) > 0) {
                     --hi;
                 } else {
                     memcpy(memory + lo * L, memory + hi * L, L);

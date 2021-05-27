@@ -64,6 +64,9 @@ namespace UniformSort {
         struct io_uring ring;
         io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
 
+        uint32_t start_byte = bits_begin / 8;
+        uint8_t mask = ((1 << (8 - (bits_begin % 8))) - 1);
+
         __kernel_timespec timeout;
         timeout.tv_sec = 1;
         
@@ -141,7 +144,6 @@ namespace UniformSort {
                 // entry_count is in upper 32 bits
                 uint32_t  entry_count = (cqe->user_data >> 32) & 0xFFFFFFFF;
 
-                //std::cout << "Amount read: " << cqe->res <<  " user_data " << cqe->user_data << " requested raw " << entry_count << "requested " << entry_count * entry_len  << " idx " << index << std::endl;
                 // amount read should equal requested
                 assert(cqe->res == entry_count * entry_len);
                 uint8_t* buffer = bufferPool[index];
@@ -159,7 +161,8 @@ namespace UniformSort {
                     // As long as position is occupied by a previous entry...
                     while (is_used.get(idx) && idx < rounded_entries) {
                         if (Util::MemCmpBits(
-                            memory + mem_ofs, buffer + buf_ofs, entry_len, bits_begin) > 0) {
+                            memory + mem_ofs, buffer + buf_ofs, entry_len, start_byte, mask) > 0) {
+                                // Swap memory and buffer using temporary space
                                 memcpy(swap_space.get(), memory + mem_ofs, entry_len);
                                 memcpy(memory + mem_ofs, buffer + buf_ofs, entry_len);
                                 memcpy(buffer + buf_ofs, swap_space.get(), entry_len);

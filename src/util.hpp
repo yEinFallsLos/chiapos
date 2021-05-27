@@ -312,19 +312,14 @@ namespace Util {
         uint8_t *left_arr,
         uint8_t *right_arr,
         uint32_t len,
-        uint32_t bits_begin)
+        uint32_t start_byte,
+        uint8_t mask)
     {
-        uint32_t start_byte = bits_begin / 8;
-        uint8_t mask = ((1 << (8 - (bits_begin % 8))) - 1);
         if ((left_arr[start_byte] & mask) != (right_arr[start_byte] & mask)) {
             return (left_arr[start_byte] & mask) - (right_arr[start_byte] & mask);
         }
 
-        for (uint32_t i = start_byte + 1; i < len; i++) {
-            if (left_arr[i] != right_arr[i])
-                return left_arr[i] - right_arr[i];
-        }
-        return 0;
+        return memcmp(left_arr + start_byte + 1, right_arr + start_byte + 1, len - start_byte - 1);
     }
 
     inline double RoundPow2(double a)

@@ -571,7 +571,7 @@ TEST_CASE("Plotting")
     }*/
     SECTION("Disk plot k21")
     {
-        PlotAndTestProofOfSpace("/cpp-test-plot.dat", 5000, 23, plot_id_3, 100, 4945, 8192, 4);
+        PlotAndTestProofOfSpace("/cpp-test-plot.dat", 5000, 25, plot_id_3, 100, 4945, 8192, 4);
     }
     // SECTION("Disk plot k24") { PlotAndTestProofOfSpace("cpp-test-plot.dat", 100, 24, plot_id_3,
     // 100, 107); }
